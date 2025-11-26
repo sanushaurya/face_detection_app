@@ -1,6 +1,7 @@
 numpy
 opencv-python
-mtcnn
-tensorflow
-scikit-learn
+flask
+flask-cors
+# Note: mediapipe installation may require: pip install mediapipe-0.10.0 or later
+# If mediapipe fails, use: pip install --no-cache-dir mediapipe
 
