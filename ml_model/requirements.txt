@@ -1,7 +1,6 @@
 numpy
 opencv-python
 mtcnn
-tensorflow-macos
-tensorflow-metal
+tensorflow
 scikit-learn
 

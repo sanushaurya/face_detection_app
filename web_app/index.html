@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8" />
   <title>Face Verify Demo</title>
@@ -8,22 +9,32 @@
   <!-- MediaPipe -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
-</head>
+  <!DOCTYPE html>
+  <html>
+
+  <head>
+    <meta charset="utf-8" />
+    <title>Face Verify Demo</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+  </head>
 
 <body>
-  <div class="container">
-    <h2>Face Verification</h2>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="output_canvas"></canvas>
 
-    <video id="video" autoplay playsinline muted></video>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="output_canvas"></canvas>
 
-    <div class="controls">
-      <button id="verifyBtn">Verify Face</button>
-    </div>
-
-    <div id="status" class="status">Status: —</div>
-    <div id="similarity" class="similarity"></div>
+  <!-- Hidden UI just for navigation -->
+  <div class="ui-container" style="background: rgba(255,255,255,0.5); padding: 10px;">
+    <a href="register.html" style="text-decoration: none; font-weight: bold; color: #333;">⚙ Register Faces</a>
   </div>
 
   <script src="script.js"></script>
 </body>
+
 </html>
