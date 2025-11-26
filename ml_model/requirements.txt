@@ -1,0 +1,7 @@
+numpy
+opencv-python
+mtcnn
+tensorflow-macos
+tensorflow-metal
+scikit-learn
+
