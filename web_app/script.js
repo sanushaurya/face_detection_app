@@ -4,6 +4,8 @@ let CTX = CANVAS.getContext("2d");
 
 let embeddings = {};
 const THRESHOLD = 0.1; // Threshold for similarity
+const API_BASE = 'http://localhost:5000';
+const ATTENDANCE_LOG_INTERVAL = 30000; // 30 seconds - prevent duplicate logging
 
 // State for tracking multiple faces
 // We will store the last identified name for each face index to avoid flickering
@@ -11,6 +13,9 @@ const THRESHOLD = 0.1; // Threshold for similarity
 let lastVerificationTime = 0;
 const VERIFY_INTERVAL = 200; // Verify every 200ms
 let faceLabels = []; // Stores { box: [x,y,w,h], label: "Name", color: "green" }
+
+// Attendance tracking
+let lastAttendanceLog = {}; // { personName: timestamp }
 
 // Resize canvas to full screen
 function resizeCanvas() {
@@ -20,20 +25,41 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// Load embeddings
+// Load embeddings from API
 async function loadEmbeddings() {
-  const persons = ["Aditya", "person2"]; // Add more names here as needed
-
-  for (let p of persons) {
-    try {
-      const res = await fetch(`embeddings/${p}_embedding.json`);
-      if (res.ok) {
-        const data = await res.json();
-        embeddings[p] = new Float32Array(data.embedding);
-        console.log(`Loaded embedding for ${p}`);
+  try {
+    const res = await fetch(`${API_BASE}/api/embeddings`);
+    if (res.ok) {
+      const embeddingsList = await res.json();
+      
+      for (let item of embeddingsList) {
+        try {
+          const embRes = await fetch(`embeddings/${item.path.split('/')[1]}`);
+          if (embRes.ok) {
+            const data = await embRes.json();
+            embeddings[item.name] = new Float32Array(data.embedding);
+            console.log(`Loaded embedding for ${item.name}`);
+          }
+        } catch (e) {
+          console.warn(`Could not load embedding for ${item.name}`);
+        }
       }
-    } catch (e) {
-      console.warn(`Could not load ${p} embedding`);
+    }
+  } catch (e) {
+    console.warn('Could not load embeddings from API, trying fallback...');
+    // Fallback to local embeddings
+    const persons = ["Aditya"];
+    for (let p of persons) {
+      try {
+        const res = await fetch(`embeddings/${p}_embedding.json`);
+        if (res.ok) {
+          const data = await res.json();
+          embeddings[p] = new Float32Array(data.embedding);
+          console.log(`Loaded embedding for ${p}`);
+        }
+      } catch (e) {
+        console.warn(`Could not load ${p} embedding`);
+      }
     }
   }
 }
@@ -86,7 +112,7 @@ function extractEmbedding(landmarks) {
 }
 
 function identifyFace(landmarks) {
-  if (!Object.keys(embeddings).length) return { name: "Loading...", color: "yellow" };
+  if (!Object.keys(embeddings).length) return { name: "Loading...", color: "yellow", confidence: 0 };
 
   const emb = extractEmbedding(landmarks);
   let bestPerson = "unknown";
@@ -101,9 +127,9 @@ function identifyFace(landmarks) {
   }
 
   if (bestSim >= THRESHOLD) {
-    return { name: bestPerson.toUpperCase(), color: "#00FF00" }; // Green
+    return { name: bestPerson.toUpperCase(), color: "#00FF00", confidence: bestSim }; // Green
   } else {
-    return { name: "Unknown", color: "#FF0000" }; // Red
+    return { name: "Unknown", color: "#FF0000", confidence: bestSim }; // Red
   }
 }
 
@@ -146,9 +172,14 @@ function drawResults(results) {
     if (shouldVerify) {
       labelData = identifyFace(landmarks);
       faceLabels.push(labelData); // Cache it (simple cache, assumes order stays same for 200ms)
+      
+      // Log attendance if person is identified and not recently logged
+      if (labelData.name !== "Unknown" && labelData.name !== "Loading...") {
+        logAttendance(labelData.name, labelData.confidence);
+      }
     } else {
       // Use cached label if exists, else default
-      labelData = faceLabels[index] || { name: "...", color: "gray" };
+      labelData = faceLabels[index] || { name: "...", color: "gray", confidence: 0 };
     }
 
     // Draw Box
@@ -168,6 +199,39 @@ function drawResults(results) {
     CTX.fillStyle = "black";
     CTX.fillText(text, x + 10, y - 7);
   });
+}
+
+async function logAttendance(personName, confidence) {
+  const now = Date.now();
+  const lastLog = lastAttendanceLog[personName] || 0;
+  
+  // Prevent duplicate logging within ATTENDANCE_LOG_INTERVAL
+  if (now - lastLog < ATTENDANCE_LOG_INTERVAL) {
+    return;
+  }
+  
+  lastAttendanceLog[personName] = now;
+  
+  try {
+    const response = await fetch(`${API_BASE}/api/attendance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: personName,
+        confidence: confidence
+      })
+    });
+    
+    if (response.ok) {
+      console.log(`Attendance logged for ${personName}`);
+    } else {
+      console.error('Failed to log attendance:', response.statusText);
+    }
+  } catch (error) {
+    console.error('Error logging attendance:', error);
+  }
 }
 
 // Start camera + face mesh
@@ -202,31 +266,7 @@ async function startCamera() {
 
 startCamera();
 
-// SAVE BUTTON (Only on Register Page)
-const saveBtn = document.getElementById("saveBtn");
-if (saveBtn) {
-  saveBtn.onclick = async () => {
-    const nameInput = document.getElementById("personName");
-    const name = nameInput.value.trim();
-
-    if (!name) {
-      alert("Please enter a name first!");
-      return;
-    }
-
-    // We need to access the last results from the camera loop
-    // Since we removed 'lastResults' global, we need to capture it or just warn user
-    // Ideally, we should capture the latest landmarks in drawResults if we are in registration mode.
-    // For simplicity, let's just alert if no face is visible on screen (which we can't easily check without global state).
-    // Let's add a global 'latestLandmarks' just for registration.
-
-    alert("Please ensure your face is visible and wait for the green box.");
-    // Note: The original save logic relied on 'lastResults'. 
-    // We need to restore a way to get the current face for registration.
-  };
-}
-
-// Restore global variable for registration usage
+// Global variable for registration usage
 let latestLandmarksForSave = null;
 const originalDrawResults = drawResults;
 drawResults = (results) => {
@@ -238,6 +278,8 @@ drawResults = (results) => {
   originalDrawResults(results);
 };
 
+// SAVE BUTTON (Only on Register Page)
+const saveBtn = document.getElementById("saveBtn");
 if (saveBtn) {
   saveBtn.onclick = async () => {
     const nameInput = document.getElementById("personName");
@@ -253,26 +295,38 @@ if (saveBtn) {
       return;
     }
 
-    const emb = extractEmbedding(latestLandmarksForSave);
-    const embArray = Array.from(emb);
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
 
-    const data = {
-      name: name,
-      embedding: embArray
-    };
+    try {
+      const emb = extractEmbedding(latestLandmarksForSave);
+      const embArray = Array.from(emb);
 
-    const jsonStr = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
+      const response = await fetch(`${API_BASE}/api/embeddings/${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          embedding: embArray
+        })
+      });
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${name}_embedding.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    alert(`Saved ${name}_embedding.json! \n\nPlease move this file to the 'web_app/embeddings/' folder.`);
+      if (response.ok) {
+        alert(`✓ Embedding saved for ${name}!\n\nThe system will now recognize this person.`);
+        nameInput.value = '';
+        // Reload embeddings
+        loadEmbeddings();
+      } else {
+        const error = await response.json();
+        alert(`Error: ${error.error || 'Failed to save embedding'}`);
+      }
+    } catch (error) {
+      console.error('Error saving embedding:', error);
+      alert(`Error saving embedding: ${error.message}`);
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save Embedding";
+    }
   };
 }
